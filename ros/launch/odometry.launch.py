@@ -35,12 +35,12 @@ def generate_launch_description():
     return LaunchDescription(
         [
             # ROS 2 parameters
-            DeclareLaunchArgument("topic", description="sensor_msg/PointCloud2 topic to process"),
+            DeclareLaunchArgument("topic", default_value="/pointcloud_clipped", description="sensor_msg/PointCloud2 topic to process"),
             DeclareLaunchArgument("bagfile", default_value=""),
             DeclareLaunchArgument("visualize", default_value="true"),
             DeclareLaunchArgument("odom_frame", default_value="odom"),
-            DeclareLaunchArgument("base_frame", default_value=""),
-            DeclareLaunchArgument("publish_odom_tf", default_value="true"),
+            DeclareLaunchArgument("base_frame", default_value="base_footprint"),
+            DeclareLaunchArgument("publish_odom_tf", default_value="false"),
             # GenZ-ICP parameters
             DeclareLaunchArgument("deskew", default_value="false"),
             DeclareLaunchArgument("max_range", default_value="100.0"),
