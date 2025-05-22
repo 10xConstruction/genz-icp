@@ -1,3 +1,108 @@
+<!-- GITDIAGRAM_START -->
+
+```mermaid
+flowchart TD
+    %% External Input
+    LiDAR["LiDAR Source\n(sensor_msgs/PointCloud2)"]:::dep
+
+    %% ROS Integration
+    subgraph "ROS Integration Layer"
+        ROS1["ROS1 OdometryServer\nNode"]:::wrapper
+        ROS2["ROS2 OdometryServer\nNode"]:::wrapper
+        Config["Config Loader\n(param server / YAML)"]:::config
+        ROSPub["Odometry Publisher\n(tf & nav_msgs/Odometry)"]:::wrapper
+    end
+
+    %% Core Library
+    subgraph "Core Library (GenZ-ICP)"
+        GenZICP["GenZICP Controller"]:::core
+        subgraph "Preprocessing"
+            Deskew["Deskew"]:::core
+            Threshold["Threshold"]:::core
+        end
+        Registration["Registration (ICP)"]:::core
+        Voxel["VoxelHashMap"]:::core
+        Metrics["Metrics"]:::core
+    end
+
+    %% Dependencies
+    subgraph "Third-Party Dependencies"
+        Eigen["Eigen"]:::dep
+        Sophus["Sophus"]:::dep
+        TBB["TBB"]:::dep
+        Robin["tsl_robin_map"]:::dep
+    end
+
+    %% Build System
+    subgraph "Build System"
+        CMakeCore["CMakeLists.txt\n(core)"]:::build
+        CMakePipeline["CMakeLists.txt\n(pipeline)"]:::build
+        CMakeMetrics["CMakeLists.txt\n(metrics)"]:::build
+        CMakeROS["CMakeLists.txt\n(ros)"]:::build
+    end
+
+    %% Data Flow
+    LiDAR -->|"/scan"| ROS1
+    LiDAR -->|"/scan"| ROS2
+
+    Config --> ROS1
+    Config --> ROS2
+
+    ROS1 -->|calls process()| GenZICP
+    ROS2 -->|calls process()| GenZICP
+
+    GenZICP --> Deskew
+    Deskew --> Threshold
+    Threshold --> Registration
+    Registration --> Metrics
+    Metrics --> ROSPub
+
+    %% Dependency Flow
+    Deskew --> Eigen
+    Threshold --> Eigen
+    Registration --> Eigen
+    Registration --> Sophus
+    Registration --> TBB
+    Registration --> Robin
+    Metrics --> Eigen
+
+    %% Build Dependencies
+    CMakeCore --> GenZICP
+    CMakePipeline --> GenZICP
+    CMakeMetrics --> Metrics
+    CMakeROS --> ROS1
+    CMakeROS --> ROS2
+    CMakeROS --> ROSPub
+
+    %% Click Events
+    click ROS1 "https://github.com/10xConstruction/genz-icp/blob/master/ros/ros1/OdometryServer.cpp"
+    click ROS2 "https://github.com/10xConstruction/genz-icp/blob/master/ros/ros2/OdometryServer.cpp"
+    click Config "https://github.com/10xConstruction/genz-icp/blob/master/ros/config/*.yaml"
+    click GenZICP "https://github.com/10xConstruction/genz-icp/blob/master/cpp/genz_icp/pipeline/GenZICP.cpp"
+    click Deskew "https://github.com/10xConstruction/genz-icp/blob/master/cpp/genz_icp/core/Deskew.cpp"
+    click Threshold "https://github.com/10xConstruction/genz-icp/blob/master/cpp/genz_icp/core/Threshold.cpp"
+    click Registration "https://github.com/10xConstruction/genz-icp/blob/master/cpp/genz_icp/core/Registration.cpp"
+    click Voxel "https://github.com/10xConstruction/genz-icp/blob/master/cpp/genz_icp/core/VoxelHashMap.cpp"
+    click Metrics "https://github.com/10xConstruction/genz-icp/blob/master/cpp/genz_icp/metrics/Metrics.cpp"
+    click Eigen "https://github.com/10xConstruction/genz-icp/tree/master/cpp/genz_icp/3rdparty/eigen/"
+    click Sophus "https://github.com/10xConstruction/genz-icp/tree/master/cpp/genz_icp/3rdparty/sophus/"
+    click TBB "https://github.com/10xConstruction/genz-icp/tree/master/cpp/genz_icp/3rdparty/tbb/"
+    click Robin "https://github.com/10xConstruction/genz-icp/tree/master/cpp/genz_icp/3rdparty/tsl_robin/"
+    click CMakeCore "https://github.com/10xConstruction/genz-icp/blob/master/cpp/genz_icp/CMakeLists.txt"
+    click CMakePipeline "https://github.com/10xConstruction/genz-icp/blob/master/cpp/genz_icp/pipeline/CMakeLists.txt"
+    click CMakeMetrics "https://github.com/10xConstruction/genz-icp/blob/master/cpp/genz_icp/metrics/CMakeLists.txt"
+    click CMakeROS "https://github.com/10xConstruction/genz-icp/blob/master/ros/CMakeLists.txt"
+
+    %% Styles
+    classDef core fill:#D0E8FF,stroke:#0366D6,color:#0366D6
+    classDef wrapper fill:#FFE4B5,stroke:#D2691E,color:#D2691E
+    classDef config fill:#DFFFE0,stroke:#2E8B57,color:#2E8B57
+    classDef dep fill:#E8E8E8,stroke:#696969,color:#696969
+    classDef build fill:#F0E0FF,stroke:#800080,color:#800080
+```
+
+<!-- GITDIAGRAM_END -->
+
 <div align="center">
     <h1>GenZ-ICP</h1>
     <a href="https://github.com/cocel-postech/genz-icp/tree/master/cpp/genz_icp"><img src="https://img.shields.io/badge/-C++-blue?logo=cplusplus" /></a>
