@@ -27,9 +27,9 @@
 #include <vector>
 
 #include "genz_icp/core/Deskew.hpp"
+#include "genz_icp/core/Registration.hpp"
 #include "genz_icp/core/Threshold.hpp"
 #include "genz_icp/core/VoxelHashMap.hpp"
-#include "genz_icp/core/Registration.hpp"
 
 namespace genz_icp::pipeline {
 
@@ -55,6 +55,14 @@ struct GenZConfig {
     // registration params
     int max_num_iterations = 150;
     double convergence_criterion = 0.0001;
+
+    size_t min_points_absolute = 100;
+    size_t min_input_points = 500;
+    size_t max_consecutive_bad_frames = 3;
+
+    bool print_debug = true;
+    bool print_warn = true;
+    bool save_debug = true;
 };
 
 class GenZICP {
@@ -66,7 +74,11 @@ public:
     explicit GenZICP(const GenZConfig &config)
         : config_(config),
           registration_(config.max_num_iterations, config.convergence_criterion),
-          local_map_(config.voxel_size, config.max_range, config.map_cleanup_radius, config.planarity_threshold, config.max_points_per_voxel),
+          local_map_(config.voxel_size,
+                     config.max_range,
+                     config.map_cleanup_radius,
+                     config.planarity_threshold,
+                     config.max_points_per_voxel),
           adaptive_threshold_(config.initial_threshold, config.min_motion_th, config.max_range) {}
 
     GenZICP() : GenZICP(GenZConfig{}) {}
@@ -75,7 +87,8 @@ public:
     Vector3dVectorTuple RegisterFrame(const std::vector<Eigen::Vector3d> &frame);
     Vector3dVectorTuple RegisterFrame(const std::vector<Eigen::Vector3d> &frame,
                                       const std::vector<double> &timestamps);
-    Vector3dVectorTuple Voxelize(const std::vector<Eigen::Vector3d> &frame, double voxel_size) const;
+    Vector3dVectorTuple Voxelize(const std::vector<Eigen::Vector3d> &frame,
+                                 double voxel_size) const;
     double GetAdaptiveThreshold();
     Sophus::SE3d GetPredictionModel() const;
     bool HasMoved();

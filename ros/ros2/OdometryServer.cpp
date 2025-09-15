@@ -20,12 +20,13 @@
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
+#include <yaml-cpp/yaml.h>
+
 #include <Eigen/Core>
 #include <memory>
 #include <sophus/se3.hpp>
 #include <utility>
 #include <vector>
-#include <yaml-cpp/yaml.h>
 
 // GenZ-ICP-ROS
 #include "OdometryServer.hpp"
@@ -46,6 +47,7 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
+
 #include "ament_index_cpp/get_package_share_directory.hpp"
 #include "rcpputils/filesystem_helper.hpp"
 
@@ -74,6 +76,12 @@ OdometryServer::OdometryServer(const rclcpp::NodeOptions &options)
     declare_parameter<double>("convergence_criterion", config_.convergence_criterion);
     declare_parameter<double>("initial_threshold", config_.initial_threshold);
     declare_parameter<double>("min_motion_th", config_.min_motion_th);
+    declare_parameter<int>("min_points_absolute", config_.min_points_absolute);
+    declare_parameter<int>("min_input_points", config_.min_input_points);
+    declare_parameter<int>("max_consecutive_bad_frames", config_.max_consecutive_bad_frames);
+    declare_parameter<bool>("print_debug", config_.print_debug);
+    declare_parameter<bool>("print_warn", config_.print_warn);
+    declare_parameter<bool>("save_debug", config_.save_debug);
     declare_parameter<std::string>("config_file", "");
 
     // Load the configuration file
@@ -120,6 +128,13 @@ OdometryServer::OdometryServer(const rclcpp::NodeOptions &options)
     config_.convergence_criterion = get_parameter("convergence_criterion").as_double();
     config_.initial_threshold = get_parameter("initial_threshold").as_double();
     config_.min_motion_th = get_parameter("min_motion_th").as_double();
+    config_.min_points_absolute = get_parameter("min_points_absolute").as_int();
+    config_.min_input_points = get_parameter("min_input_points").as_int();
+    config_.max_consecutive_bad_frames = get_parameter("max_consecutive_bad_frames").as_int();
+    config_.print_debug = get_parameter("print_debug").as_bool();
+    config_.print_warn = get_parameter("print_warn").as_bool();
+    config_.save_debug = get_parameter("save_debug").as_bool();
+
     if (config_.max_range < config_.min_range) {
         RCLCPP_WARN(get_logger(), "[WARNING] max_range is smaller than min_range, settng min_range to 0.0");
         config_.min_range = 0.0;
@@ -141,8 +156,10 @@ OdometryServer::OdometryServer(const rclcpp::NodeOptions &options)
     path_msg_.header.frame_id = odom_frame_;
     if (publish_debug_clouds_) {
         map_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>("/genz/local_map", qos);
-        planar_points_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>("/genz/planar_points", qos);
-        non_planar_points_publisher_ = create_publisher<sensor_msgs::msg::PointCloud2>("/genz/non_planar_points", qos);
+        planar_points_publisher_ =
+            create_publisher<sensor_msgs::msg::PointCloud2>("/genz/planar_points", qos);
+        non_planar_points_publisher_ =
+            create_publisher<sensor_msgs::msg::PointCloud2>("/genz/non_planar_points", qos);
     }
 
     // Initialize the transform broadcaster
@@ -152,6 +169,9 @@ OdometryServer::OdometryServer(const rclcpp::NodeOptions &options)
     tf2_listener_ = std::make_unique<tf2_ros::TransformListener>(*tf2_buffer_);
 
     RCLCPP_INFO(this->get_logger(), "GenZ-ICP ROS 2 odometry node initialized");
+
+    // Register node with ros2top
+    register_with_ros2top();
 }
 
 Sophus::SE3d OdometryServer::LookupTransform(const std::string &target_frame,
@@ -172,8 +192,33 @@ Sophus::SE3d OdometryServer::LookupTransform(const std::string &target_frame,
 }
 
 void OdometryServer::RegisterFrame(const sensor_msgs::msg::PointCloud2::ConstSharedPtr &msg) {
-    const auto cloud_frame_id = msg->header.frame_id;
     const auto points = PointCloud2ToEigen(msg);
+
+    if (points.empty()) {
+        RCLCPP_WARN(get_logger(), "Empty point cloud received!");
+        return;
+    }
+
+    // Check for NaN/invalid points
+    size_t invalid_count = 0;
+    double min_range = std::numeric_limits<double>::max();
+    double max_range = 0.0;
+    for (const auto &pt : points) {
+        if (!std::isfinite(pt.x()) || !std::isfinite(pt.y()) || !std::isfinite(pt.z())) {
+            invalid_count++;
+        } else {
+            double range = pt.norm();
+            min_range = std::min(min_range, range);
+            max_range = std::max(max_range, range);
+        }
+    }
+
+    // RCLCPP_INFO(get_logger(), "Invalid points: %zu/%zu (%.1f%%)", invalid_count, points.size(),
+    //             100.0 * invalid_count / points.size());
+    // RCLCPP_INFO(get_logger(), "Range: [%.2f, %.2f]m", min_range, max_range);
+
+    const auto cloud_frame_id = msg->header.frame_id;
+    // const auto points = PointCloud2ToEigen(msg);
     const auto timestamps = [&]() -> std::vector<double> {
         if (!config_.deskew) return {};
         return GetTimestamps(msg);
@@ -248,8 +293,10 @@ void OdometryServer::PublishClouds(const rclcpp::Time &stamp,
         cloud_header.frame_id = cloud_frame_id;
 
         map_publisher_->publish(std::move(EigenToPointCloud2(genz_map, odom_header)));
-        planar_points_publisher_->publish(std::move(EigenToPointCloud2(planar_points, cloud_header)));
-        non_planar_points_publisher_->publish(std::move(EigenToPointCloud2(non_planar_points, cloud_header)));
+        planar_points_publisher_->publish(
+            std::move(EigenToPointCloud2(planar_points, cloud_header)));
+        non_planar_points_publisher_->publish(
+            std::move(EigenToPointCloud2(non_planar_points, cloud_header)));
 
         return;
     }
@@ -257,7 +304,8 @@ void OdometryServer::PublishClouds(const rclcpp::Time &stamp,
     // If transmitting to tf tree we know where the clouds are exactly
     const auto cloud2odom = LookupTransform(odom_frame_, cloud_frame_id);
     planar_points_publisher_->publish(std::move(EigenToPointCloud2(planar_points, odom_header)));
-    non_planar_points_publisher_->publish(std::move(EigenToPointCloud2(non_planar_points, odom_header)));
+    non_planar_points_publisher_->publish(
+        std::move(EigenToPointCloud2(non_planar_points, odom_header)));
 
     if (!base_frame_.empty()) {
         const Sophus::SE3d cloud2base = LookupTransform(base_frame_, cloud_frame_id);
