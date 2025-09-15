@@ -171,7 +171,7 @@ OdometryServer::OdometryServer(const rclcpp::NodeOptions &options)
     RCLCPP_INFO(this->get_logger(), "GenZ-ICP ROS 2 odometry node initialized");
 
     // Register node with ros2top
-    register_with_ros2top();
+    // register_with_ros2top();
 }
 
 Sophus::SE3d OdometryServer::LookupTransform(const std::string &target_frame,
